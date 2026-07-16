@@ -106,10 +106,9 @@ def group_blocks(groups: list) -> list:
 def load_panel(spec):
     df = pd.read_excel(spec["file"], sheet_name=spec["sheet"])
     labels = [short_label(n) for n in df["row_gene_name"]]
-    # Excel rows are the input gene, columns the output gene. Plotted as-is
-    # (no transpose) so each excel row is an image row (y-axis = input) and
-    # each excel column is an image column (x-axis = output).
-    matrix = df.iloc[:, 3:].to_numpy(dtype=float)
+    # Excel rows are the input gene, columns the output gene; transpose so
+    # the plotted x-axis is input and y-axis is output.
+    matrix = df.iloc[:, 3:].to_numpy(dtype=float).T
     blocks = group_blocks(df["Group"].tolist())
     return labels, matrix, blocks
 
@@ -157,8 +156,8 @@ def draw_panel(ax, matrix, blocks, title, panel_label):
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=22, fontweight="bold",
                  loc="left", pad=14)
-    ax.set_xlabel("gene (output)", fontsize=14, color="#52514e")
-    ax.set_ylabel("gene (input)", fontsize=14, color="#52514e")
+    ax.set_xlabel("gene (input)", fontsize=14, color="#52514e")
+    ax.set_ylabel("gene (output)", fontsize=14, color="#52514e")
     return im
 
 
