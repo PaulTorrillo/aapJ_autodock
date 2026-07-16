@@ -25,13 +25,24 @@ OUT = HERE / "output"
 OUT.mkdir(exist_ok=True)
 
 VLIM = 0.3  # heatmap color scale: -0.3 to 0.3
-CMAP = plt.get_cmap("RdBu_r").copy()
+CMAP = plt.get_cmap("RdBu").copy()  # RdBu (not reversed): red=negative, blue=positive
 CMAP.set_bad("#e4e3dc")  # self-pairs / missing values
 
-# Categorical outline colors (validated CVD-safe set), reserving blue/red
-# for the heatmap's own diverging fill so outlines never fight the data.
-GROUP_HUES = ["#008300", "#e87ba4", "#eda100", "#1baf7a", "#eb6834", "#4a3aa7"]
+# Categorical outline colors: dark, highly-saturated hues chosen to stand out
+# hard against the pale red/blue heatmap fill. Blue and red are avoided
+# entirely so an outline is never mistaken for the value encoding.
+GROUP_HUES = [
+    "#1b7837",  # dark green
+    "#762a83",  # dark purple
+    "#e08214",  # vivid orange
+    "#000000",  # black
+    "#c51b7d",  # vivid magenta
+    "#01665e",  # dark teal
+    "#8c510a",  # brown
+    "#b8860b",  # dark goldenrod
+]
 LINESTYLES = ["-", "--", ":"]
+OUTLINE_WIDTH = 3.2
 
 PANELS = [
     dict(
@@ -127,20 +138,24 @@ def draw_panel(ax, labels, matrix, blocks, title, panel_label, color_map):
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
 
-    for start, end, name in blocks:
+    # Outline the full row band and full column band for each module, so the
+    # box encloses every interaction involving a module member (not just the
+    # module's self-interaction block on the diagonal).
+    for depth, (start, end, name) in enumerate(blocks):
         color, ls = color_map[name]
         size = end - start + 1
-        rect = Rectangle(
-            (start - 0.5, start - 0.5),
-            size,
-            size,
-            fill=False,
-            edgecolor=color,
-            linestyle=ls,
-            linewidth=1.6,
-            zorder=5,
+        row_band = Rectangle(
+            (-0.5, start - 0.5), n, size,
+            fill=False, edgecolor=color, linestyle=ls,
+            linewidth=OUTLINE_WIDTH, zorder=6 + depth,
         )
-        ax.add_patch(rect)
+        col_band = Rectangle(
+            (start - 0.5, -0.5), size, n,
+            fill=False, edgecolor=color, linestyle=ls,
+            linewidth=OUTLINE_WIDTH, zorder=6 + depth,
+        )
+        ax.add_patch(row_band)
+        ax.add_patch(col_band)
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=11, fontweight="bold",
                  loc="left", pad=8)
@@ -153,7 +168,7 @@ def draw_legend(ax, blocks, color_map):
     ax.axis("off")
     handles = [
         Line2D([0], [0], color=color_map[name][0], linestyle=color_map[name][1],
-               linewidth=2.2)
+               linewidth=OUTLINE_WIDTH)
         for _, _, name in blocks
     ]
     names = [name for _, _, name in blocks]
@@ -164,7 +179,7 @@ def draw_legend(ax, blocks, color_map):
         loc="upper left",
         frameon=False,
         fontsize=7.5,
-        title="Functional module\n(diagonal block outline)",
+        title="Functional module\n(row/column band = all\ninteractions with module)",
         title_fontsize=7.5,
         handlelength=2.2,
         labelspacing=0.9,
