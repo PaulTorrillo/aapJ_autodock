@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 from PIL import Image, ImageDraw, ImageFont
+from scipy import stats
 
 HERE = Path(__file__).parent
 DATA = HERE / "data"
@@ -202,31 +203,32 @@ def load_cooccurrence():
 
 
 def fit_line(x, y):
-    slope, intercept = np.polyfit(x, y, 1)
-    pred = slope * x + intercept
-    ss_res = np.sum((y - pred) ** 2)
-    ss_tot = np.sum((y - y.mean()) ** 2)
-    r2 = 1 - ss_res / ss_tot
-    return slope, intercept, r2
+    result = stats.linregress(x, y)
+    return result.slope, result.intercept, result.rvalue ** 2, result.pvalue
 
 
 def draw_cooccurrence_panel(ax, df):
     hi = df[df["enough_genomes"]]
     lo = df[~df["enough_genomes"]]
 
-    ax.scatter(lo["log_odds"], lo["Shap Value"], s=10, color=COLOR_EXCLUDED,
+    # x = mecA SHAP value, y = log10(co-occurrence odds ratio).
+    ax.scatter(lo["Shap Value"], lo["log_odds"], s=10, color=COLOR_EXCLUDED,
                alpha=0.45, linewidths=0, zorder=2,
                label=f"< {MIN_GENOMES_PER_CELL} genomes in ≥1 combination "
                      f"(n={len(lo):,}, excluded from fit)")
-    ax.scatter(hi["log_odds"], hi["Shap Value"], s=10, color=COLOR_FIT,
+    ax.scatter(hi["Shap Value"], hi["log_odds"], s=10, color=COLOR_FIT,
                alpha=0.45, linewidths=0, zorder=3,
                label=f"≥ {MIN_GENOMES_PER_CELL} genomes in all 4 combinations "
                      f"(n={len(hi):,}, used for fit)")
 
-    slope, intercept, r2 = fit_line(hi["log_odds"].to_numpy(), hi["Shap Value"].to_numpy())
-    x_line = np.array([df["log_odds"].min(), df["log_odds"].max()])
+    slope, intercept, r2, pvalue = fit_line(
+        hi["Shap Value"].to_numpy(), hi["log_odds"].to_numpy()
+    )
+    x_line = np.array([df["Shap Value"].min(), df["Shap Value"].max()])
     sign = "+" if intercept >= 0 else "−"
-    eq = f"y = {slope:.4f}x {sign} {abs(intercept):.4f}   (R² = {r2:.3f})"
+    p_str = f"{pvalue:.2e}" if pvalue < 0.001 else f"{pvalue:.3f}"
+    eq = (f"y = {slope:.4f}x {sign} {abs(intercept):.4f}   "
+          f"(R² = {r2:.3f}, p = {p_str})")
     ax.plot(x_line, slope * x_line + intercept, color=COLOR_LINE, linewidth=2.6,
             zorder=4, label=f"Line of best fit — {eq}")
 
@@ -235,8 +237,8 @@ def draw_cooccurrence_panel(ax, df):
 
     ax.set_title("D.  mecA SHAP value vs. gene co-occurrence", fontsize=22,
                  fontweight="bold", loc="left", pad=14)
-    ax.set_xlabel("log10(co-occurrence odds ratio)", fontsize=14, color="#52514e")
-    ax.set_ylabel("mecA SHAP value", fontsize=14, color="#52514e")
+    ax.set_xlabel("mecA SHAP value", fontsize=14, color="#52514e")
+    ax.set_ylabel("log10(co-occurrence odds ratio)", fontsize=14, color="#52514e")
     ax.tick_params(labelsize=12)
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
@@ -323,11 +325,11 @@ def main():
     print("Saved figures to", OUT)
 
 
-def stitch_panels(png_paths, out_path):
-    """Stack the individually-rendered panels into one combined figure."""
+def stitch_panels(png_paths, out_path, ncols=2):
+    """Arrange the individually-rendered panels into an ncols-wide grid."""
     images = [Image.open(p) for p in png_paths]
     target_w = max(im.width for im in images)
-    gap = 40
+    gap = 60
     title_h = 220
 
     resized = []
@@ -337,8 +339,13 @@ def stitch_panels(png_paths, out_path):
             im = im.resize((target_w, round(im.height * scale)), Image.LANCZOS)
         resized.append(im)
 
-    total_h = title_h + sum(im.height for im in resized) + gap * (len(resized) - 1) + 20
-    canvas = Image.new("RGB", (target_w, total_h), "white")
+    nrows = -(-len(resized) // ncols)
+    grid = [resized[i * ncols:(i + 1) * ncols] for i in range(nrows)]
+    row_heights = [max(im.height for im in row) for row in grid]
+
+    total_w = ncols * target_w + gap * (ncols - 1)
+    total_h = title_h + sum(row_heights) + gap * (nrows - 1) + 20
+    canvas = Image.new("RGB", (total_w, total_h), "white")
     draw = ImageDraw.Draw(canvas)
     try:
         font = ImageFont.truetype(
@@ -349,9 +356,13 @@ def stitch_panels(png_paths, out_path):
     draw.text((30, 40), "Directional SHAP gene–gene interactions", fill="black", font=font)
 
     y = title_h
-    for im in resized:
-        canvas.paste(im, (0, y))
-        y += im.height + gap
+    for row, row_h in zip(grid, row_heights):
+        x = 0
+        for im in row:
+            y_off = y + (row_h - im.height) // 2
+            canvas.paste(im, (x, y_off))
+            x += im.width + gap
+        y += row_h + gap
 
     canvas.save(out_path)
 
