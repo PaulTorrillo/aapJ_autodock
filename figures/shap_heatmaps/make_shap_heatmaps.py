@@ -99,7 +99,10 @@ def group_blocks(groups: list) -> list:
 def load_panel(spec):
     df = pd.read_excel(spec["file"], sheet_name=spec["sheet"])
     labels = [short_label(n) for n in df["row_gene_name"]]
-    matrix = df.iloc[:, 3:].to_numpy(dtype=float)
+    # Excel rows are the input gene, columns the output gene; transpose so
+    # the plotted x-axis (columns) is input and y-axis (rows) is output,
+    # matching the axis labels.
+    matrix = df.iloc[:, 3:].to_numpy(dtype=float).T
     blocks = group_blocks(df["Group"].tolist())
     return labels, matrix, blocks
 
