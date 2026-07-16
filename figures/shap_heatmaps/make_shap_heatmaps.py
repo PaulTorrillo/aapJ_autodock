@@ -55,6 +55,12 @@ PANELS = [
     ),
 ]
 
+COOCCURRENCE_FILE = DATA / "mecA_cooccurrence.xlsx"
+MIN_GENOMES_PER_CELL = 100  # min count required in each of the 4 present/absent combos
+COLOR_FIT = "#2a6fb0"        # points used in the regression
+COLOR_EXCLUDED = "#a8a6a0"   # points below the genome-count threshold
+COLOR_LINE = "black"
+
 STOP_SYMBOLS = {
     "protein", "transporter", "family", "system", "subunit", "domain",
     "component", "module", "kinase", "reductase", "transposase",
@@ -179,6 +185,96 @@ def draw_legend(ax, blocks, ncol=1):
                  ha="left", va="top", transform=ax.transAxes)
 
 
+def load_cooccurrence():
+    df = pd.read_excel(COOCCURRENCE_FILE, sheet_name="meca_all_gene_cooccurrence")
+    count_cols = ["meca_pos_gene_pos", "meca_pos_gene_neg",
+                  "meca_neg_gene_pos", "meca_neg_gene_neg"]
+    min_count = df[count_cols].min(axis=1)
+
+    # log10 is undefined for a zero or infinite odds ratio (one combo count
+    # of 0); those rows are dropped outright rather than force-plotted.
+    finite = np.isfinite(df["cooccurrence_odds_ratio"]) & (df["cooccurrence_odds_ratio"] > 0)
+    df = df.loc[finite].copy()
+    min_count = min_count.loc[finite]
+    df["log_odds"] = np.log10(df["cooccurrence_odds_ratio"])
+    df["enough_genomes"] = min_count >= MIN_GENOMES_PER_CELL
+    return df
+
+
+def fit_line(x, y):
+    slope, intercept = np.polyfit(x, y, 1)
+    pred = slope * x + intercept
+    ss_res = np.sum((y - pred) ** 2)
+    ss_tot = np.sum((y - y.mean()) ** 2)
+    r2 = 1 - ss_res / ss_tot
+    return slope, intercept, r2
+
+
+def draw_cooccurrence_panel(ax, df):
+    hi = df[df["enough_genomes"]]
+    lo = df[~df["enough_genomes"]]
+
+    ax.scatter(lo["log_odds"], lo["Shap Value"], s=10, color=COLOR_EXCLUDED,
+               alpha=0.45, linewidths=0, zorder=2,
+               label=f"< {MIN_GENOMES_PER_CELL} genomes in ≥1 combination "
+                     f"(n={len(lo):,}, excluded from fit)")
+    ax.scatter(hi["log_odds"], hi["Shap Value"], s=10, color=COLOR_FIT,
+               alpha=0.45, linewidths=0, zorder=3,
+               label=f"≥ {MIN_GENOMES_PER_CELL} genomes in all 4 combinations "
+                     f"(n={len(hi):,}, used for fit)")
+
+    slope, intercept, r2 = fit_line(hi["log_odds"].to_numpy(), hi["Shap Value"].to_numpy())
+    x_line = np.array([df["log_odds"].min(), df["log_odds"].max()])
+    sign = "+" if intercept >= 0 else "−"
+    eq = f"y = {slope:.4f}x {sign} {abs(intercept):.4f}   (R² = {r2:.3f})"
+    ax.plot(x_line, slope * x_line + intercept, color=COLOR_LINE, linewidth=2.6,
+            zorder=4, label=f"Line of best fit — {eq}")
+
+    ax.axhline(0, color="#c3c2b7", linewidth=1, zorder=1)
+    ax.axvline(0, color="#c3c2b7", linewidth=1, zorder=1)
+
+    ax.set_title("D.  mecA SHAP value vs. gene co-occurrence", fontsize=22,
+                 fontweight="bold", loc="left", pad=14)
+    ax.set_xlabel("log10(co-occurrence odds ratio)", fontsize=14, color="#52514e")
+    ax.set_ylabel("mecA SHAP value", fontsize=14, color="#52514e")
+    ax.tick_params(labelsize=12)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        ax.spines[spine].set_color("#c3c2b7")
+
+
+def draw_scatter_legend(ax, handles):
+    ax.axis("off")
+    ax.legend(
+        handles=handles, loc="center left", frameon=False, fontsize=14,
+        markerscale=2.2, labelspacing=1.0, borderaxespad=0,
+        handletextpad=0.8,
+    )
+
+
+def make_cooccurrence_panel():
+    df = load_cooccurrence()
+
+    pf = plt.figure(figsize=(10.8, 10 + 1.7))
+    pgs = pf.add_gridspec(
+        nrows=2, ncols=1, height_ratios=[10, 1.7], hspace=0.22,
+        left=0.08, right=0.97, top=0.95, bottom=0.03,
+    )
+    pax = pf.add_subplot(pgs[0, 0])
+    draw_cooccurrence_panel(pax, df)
+
+    lax = pf.add_subplot(pgs[1, 0])
+    handles, labels = pax.get_legend_handles_labels()
+    draw_scatter_legend(lax, handles)
+
+    png_path = OUT / "shap_scatter_mecA_cooccurrence.png"
+    pf.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.15)
+    pf.savefig(OUT / "shap_scatter_mecA_cooccurrence.pdf", bbox_inches="tight", pad_inches=0.15)
+    plt.close(pf)
+    return png_path
+
+
 def main():
     panel_data = []
     for spec in PANELS:
@@ -220,6 +316,8 @@ def main():
         pf.savefig(OUT / f"shap_heatmap_{spec['key']}.pdf", bbox_inches="tight", pad_inches=0.15)
         plt.close(pf)
         panel_pngs.append(png_path)
+
+    panel_pngs.append(make_cooccurrence_panel())
 
     stitch_panels(panel_pngs, OUT / "shap_interaction_heatmaps.png")
     print("Saved figures to", OUT)
