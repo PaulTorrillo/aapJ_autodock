@@ -24,7 +24,7 @@ DATA = HERE / "data"
 OUT = HERE / "output"
 OUT.mkdir(exist_ok=True)
 
-VLIM = 0.3  # heatmap color scale: -0.3 to 0.3
+VLIM = 0.5  # heatmap color scale: -0.5 to 0.5
 CMAP = plt.get_cmap("RdBu").copy()  # RdBu (not reversed): red=negative, blue=positive
 CMAP.set_bad("#e4e3dc")  # self-pairs / missing values
 
@@ -138,24 +138,16 @@ def draw_panel(ax, labels, matrix, blocks, title, panel_label, color_map):
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
 
-    # Outline the full row band and full column band for each module, so the
-    # box encloses every interaction involving a module member (not just the
-    # module's self-interaction block on the diagonal).
+    # Outline each module's self-interaction block on the diagonal.
     for depth, (start, end, name) in enumerate(blocks):
         color, ls = color_map[name]
         size = end - start + 1
-        row_band = Rectangle(
-            (-0.5, start - 0.5), n, size,
+        rect = Rectangle(
+            (start - 0.5, start - 0.5), size, size,
             fill=False, edgecolor=color, linestyle=ls,
             linewidth=OUTLINE_WIDTH, zorder=6 + depth,
         )
-        col_band = Rectangle(
-            (start - 0.5, -0.5), size, n,
-            fill=False, edgecolor=color, linestyle=ls,
-            linewidth=OUTLINE_WIDTH, zorder=6 + depth,
-        )
-        ax.add_patch(row_band)
-        ax.add_patch(col_band)
+        ax.add_patch(rect)
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=11, fontweight="bold",
                  loc="left", pad=8)
@@ -179,7 +171,7 @@ def draw_legend(ax, blocks, color_map):
         loc="upper left",
         frameon=False,
         fontsize=7.5,
-        title="Functional module\n(row/column band = all\ninteractions with module)",
+        title="Functional module\n(diagonal block outline)",
         title_fontsize=7.5,
         handlelength=2.2,
         labelspacing=0.9,
