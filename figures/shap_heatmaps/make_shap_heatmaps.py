@@ -12,10 +12,10 @@ Usage: python make_shap_heatmaps.py
 import re
 from pathlib import Path
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from PIL import Image, ImageDraw, ImageFont
 
@@ -28,21 +28,8 @@ VLIM = 0.5  # heatmap color scale: -0.5 to 0.5
 CMAP = plt.get_cmap("RdBu").copy()  # RdBu (not reversed): red=negative, blue=positive
 CMAP.set_bad("#e4e3dc")  # self-pairs / missing values
 
-# Categorical outline colors: dark, highly-saturated hues chosen to stand out
-# hard against the pale red/blue heatmap fill. Blue and red are avoided
-# entirely so an outline is never mistaken for the value encoding.
-GROUP_HUES = [
-    "#1b7837",  # dark green
-    "#762a83",  # dark purple
-    "#e08214",  # vivid orange
-    "#000000",  # black
-    "#c51b7d",  # vivid magenta
-    "#01665e",  # dark teal
-    "#8c510a",  # brown
-    "#b8860b",  # dark goldenrod
-]
-LINESTYLES = ["-", "--", ":"]
-OUTLINE_WIDTH = 3.2
+OUTLINE_COLOR = "black"
+OUTLINE_WIDTH = 2.6
 
 PANELS = [
     dict(
@@ -117,7 +104,7 @@ def load_panel(spec):
     return labels, matrix, blocks
 
 
-def draw_panel(ax, matrix, blocks, title, panel_label, color_map):
+def draw_panel(ax, matrix, blocks, title, panel_label):
     n = matrix.shape[0]
     im = ax.imshow(
         np.ma.masked_invalid(matrix),
@@ -139,16 +126,24 @@ def draw_panel(ax, matrix, blocks, title, panel_label, color_map):
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
 
-    # Outline each module's self-interaction block on the diagonal.
+    # Outline each module's self-interaction block on the diagonal, numbered
+    # in the order the modules appear along the genome.
     for depth, (start, end, name) in enumerate(blocks):
-        color, ls = color_map[name]
+        number = depth + 1
         size = end - start + 1
         rect = Rectangle(
             (start - 0.5, start - 0.5), size, size,
-            fill=False, edgecolor=color, linestyle=ls,
+            fill=False, edgecolor=OUTLINE_COLOR,
             linewidth=OUTLINE_WIDTH, zorder=6 + depth,
         )
         ax.add_patch(rect)
+        center = (start + end) / 2
+        ax.text(
+            center, center, str(number),
+            ha="center", va="center", fontsize=13, fontweight="bold",
+            color="black", zorder=20,
+            path_effects=[pe.withStroke(linewidth=2.5, foreground="white")],
+        )
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=22, fontweight="bold",
                  loc="left", pad=14)
@@ -157,46 +152,35 @@ def draw_panel(ax, matrix, blocks, title, panel_label, color_map):
     return im
 
 
-def draw_legend(ax, blocks, color_map, ncol=1):
+def draw_legend(ax, blocks, ncol=1):
     ax.axis("off")
-    handles = [
-        Line2D([0], [0], color=color_map[name][0], linestyle=color_map[name][1],
-               linewidth=OUTLINE_WIDTH)
-        for _, _, name in blocks
-    ]
-    names = [name for _, _, name in blocks]
-    if not handles:
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    n = len(blocks)
+    if n == 0:
         return
-    ax.legend(
-        handles, names,
-        loc="upper center",
-        frameon=False,
-        fontsize=15,
-        title="Functional module (diagonal block outline)",
-        title_fontsize=16,
-        handlelength=2.6,
-        labelspacing=1.0,
-        columnspacing=2.2,
-        ncol=ncol,
-        borderaxespad=0,
-    )
-
-
-def assign_colors(blocks):
-    color_map = {}
-    for i, (_, _, name) in enumerate(blocks):
-        hue = GROUP_HUES[i % len(GROUP_HUES)]
-        ls = LINESTYLES[i // len(GROUP_HUES)]
-        color_map[name] = (hue, ls)
-    return color_map
+    rows = -(-n // ncol)
+    ax.text(0.0, 0.94, "Functional module (number = diagonal block outline)",
+             fontsize=16, fontweight="bold", ha="left", va="top",
+             transform=ax.transAxes)
+    col_x = [0.0] if ncol == 1 else [0.0, 0.60]
+    top = 0.66
+    for idx, (start, end, name) in enumerate(blocks):
+        row = idx % rows
+        col = idx // rows
+        x = col_x[col]
+        y = top - row * (0.62 / max(rows, 1))
+        ax.text(x, y, f"{idx + 1}.", fontsize=15, fontweight="bold",
+                 ha="left", va="top", transform=ax.transAxes)
+        ax.text(x + 0.045, y, name, fontsize=15,
+                 ha="left", va="top", transform=ax.transAxes)
 
 
 def main():
     panel_data = []
     for spec in PANELS:
         labels, matrix, blocks = load_panel(spec)
-        color_map = assign_colors(blocks)
-        panel_data.append((spec, labels, matrix, blocks, color_map))
+        panel_data.append((spec, labels, matrix, blocks))
 
     # Render each panel individually at full resolution, then stitch them
     # into one combined figure. Doing the composite in pixel space (rather
@@ -204,7 +188,7 @@ def main():
     # that aspect-equal panels of very different gene counts produce when
     # forced to share row-height ratios.
     panel_pngs = []
-    for spec, labels, matrix, blocks, color_map in panel_data:
+    for spec, labels, matrix, blocks in panel_data:
         n_groups = len(blocks)
         ncol = 2 if n_groups > 4 else 1
         legend_rows = -(-n_groups // ncol)
@@ -213,15 +197,15 @@ def main():
 
         pf = plt.figure(figsize=(10, 10 + legend_h + cbar_h))
         pgs = pf.add_gridspec(
-            nrows=3, ncols=1, height_ratios=[10, legend_h, cbar_h], hspace=0.05,
+            nrows=3, ncols=1, height_ratios=[10, legend_h, cbar_h], hspace=0.14,
             left=0.06, right=0.97, top=0.95, bottom=0.02,
         )
         pax = pf.add_subplot(pgs[0, 0])
         pax.set_aspect("equal")
-        im = draw_panel(pax, matrix, blocks, spec["title"], spec["label"], color_map)
+        im = draw_panel(pax, matrix, blocks, spec["title"], spec["label"])
 
         lax = pf.add_subplot(pgs[1, 0])
-        draw_legend(lax, blocks, color_map, ncol=ncol)
+        draw_legend(lax, blocks, ncol=ncol)
 
         bax = pf.add_subplot(pgs[2, 0])
         bax.axis("off")
