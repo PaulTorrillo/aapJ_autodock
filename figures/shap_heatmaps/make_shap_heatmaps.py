@@ -103,13 +103,19 @@ def group_blocks(groups: list) -> list:
     return blocks
 
 
+GROUP_RENAMES = {
+    "aureusimine nonribosomal peptide biosynthesis": "aureusimine biosynthesis",
+}
+
+
 def load_panel(spec):
     df = pd.read_excel(spec["file"], sheet_name=spec["sheet"])
     labels = [short_label(n) for n in df["row_gene_name"]]
     # Excel rows are the input gene, columns the output gene; transpose so
     # the plotted x-axis is input and y-axis is output.
     matrix = df.iloc[:, 3:].to_numpy(dtype=float).T
-    blocks = group_blocks(df["Group"].tolist())
+    groups = [GROUP_RENAMES.get(g, g) for g in df["Group"].tolist()]
+    blocks = group_blocks(groups)
     return labels, matrix, blocks
 
 
@@ -156,8 +162,8 @@ def draw_panel(ax, matrix, blocks, title, panel_label):
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=22, fontweight="bold",
                  loc="left", pad=14)
-    ax.set_xlabel("gene (input)", fontsize=14, color="#52514e")
-    ax.set_ylabel("gene (output)", fontsize=14, color="#52514e")
+    ax.set_xlabel("gene (input)", fontsize=19, color="#52514e")
+    ax.set_ylabel("gene (output)", fontsize=19, color="#52514e")
     return im
 
 
@@ -246,8 +252,8 @@ def draw_cooccurrence_panel(ax, df):
 
     ax.set_title("D.  mecA SHAP value vs. gene co-occurrence", fontsize=22,
                  fontweight="bold", loc="left", pad=14)
-    ax.set_xlabel("mecA SHAP value", fontsize=14, color="#52514e")
-    ax.set_ylabel("log10(co-occurrence odds ratio)", fontsize=14, color="#52514e")
+    ax.set_xlabel("mecA SHAP value", fontsize=19, color="#52514e")
+    ax.set_ylabel("log10(co-occurrence odds ratio)", fontsize=19, color="#52514e")
     ax.tick_params(labelsize=12)
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
