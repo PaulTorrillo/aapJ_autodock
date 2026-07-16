@@ -147,8 +147,8 @@ def draw_panel(ax, matrix, blocks, title, panel_label):
 
     ax.set_title(f"{panel_label}.  {title}", fontsize=22, fontweight="bold",
                  loc="left", pad=14)
-    ax.set_xlabel("genes (genomic order) →", fontsize=14, color="#52514e")
-    ax.set_ylabel("genes (genomic order) →", fontsize=14, color="#52514e")
+    ax.set_xlabel("gene (input)", fontsize=14, color="#52514e")
+    ax.set_ylabel("gene (output)", fontsize=14, color="#52514e")
     return im
 
 
@@ -193,26 +193,24 @@ def main():
         ncol = 2 if n_groups > 4 else 1
         legend_rows = -(-n_groups // ncol)
         legend_h = 0.5 * legend_rows + 0.5
-        cbar_h = 1.3
 
-        pf = plt.figure(figsize=(10, 10 + legend_h + cbar_h))
+        pf = plt.figure(figsize=(10.8, 10 + legend_h))
         pgs = pf.add_gridspec(
-            nrows=3, ncols=1, height_ratios=[10, legend_h, cbar_h], hspace=0.14,
-            left=0.06, right=0.97, top=0.95, bottom=0.02,
+            nrows=2, ncols=2, width_ratios=[10, 0.35], height_ratios=[10, legend_h],
+            hspace=0.14, wspace=0.12,
+            left=0.06, right=0.93, top=0.95, bottom=0.02,
         )
         pax = pf.add_subplot(pgs[0, 0])
         pax.set_aspect("equal")
         im = draw_panel(pax, matrix, blocks, spec["title"], spec["label"])
 
-        lax = pf.add_subplot(pgs[1, 0])
-        draw_legend(lax, blocks, ncol=ncol)
-
-        bax = pf.add_subplot(pgs[2, 0])
-        bax.axis("off")
-        cax = bax.inset_axes([0.32, 0.55, 0.36, 0.28])
-        pcbar = pf.colorbar(im, cax=cax, orientation="horizontal", extend="both")
+        cax = pf.add_subplot(pgs[0, 1])
+        pcbar = pf.colorbar(im, cax=cax, orientation="vertical", extend="both")
         pcbar.set_label("Directional SHAP interaction value", fontsize=15)
         pcbar.ax.tick_params(labelsize=13)
+
+        lax = pf.add_subplot(pgs[1, :])
+        draw_legend(lax, blocks, ncol=ncol)
 
         png_path = OUT / f"shap_heatmap_{spec['key']}.png"
         pf.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.15)
