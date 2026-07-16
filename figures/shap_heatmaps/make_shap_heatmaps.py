@@ -117,8 +117,8 @@ def load_panel(spec):
     return labels, matrix, blocks
 
 
-def draw_panel(ax, labels, matrix, blocks, title, panel_label, color_map):
-    n = len(labels)
+def draw_panel(ax, matrix, blocks, title, panel_label, color_map):
+    n = matrix.shape[0]
     im = ax.imshow(
         np.ma.masked_invalid(matrix),
         cmap=CMAP,
@@ -127,13 +127,14 @@ def draw_panel(ax, labels, matrix, blocks, title, panel_label, color_map):
         interpolation="nearest",
     )
 
-    ax.set_xticks(range(n))
-    ax.set_yticks(range(n))
-    ax.set_xticklabels(labels, rotation=90, fontsize=5.2, family="monospace")
-    ax.set_yticklabels(labels, fontsize=5.2, family="monospace")
-    ax.tick_params(length=2, pad=1.5)
+    # Gene-level tick labels aren't legible at this scale; drop them and
+    # just frame the axes so the matrix extent is still clear.
+    ax.set_xticks([])
+    ax.set_yticks([])
     for spine in ax.spines.values():
-        spine.set_visible(False)
+        spine.set_visible(True)
+        spine.set_color("#c3c2b7")
+        spine.set_linewidth(1)
 
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
@@ -149,14 +150,14 @@ def draw_panel(ax, labels, matrix, blocks, title, panel_label, color_map):
         )
         ax.add_patch(rect)
 
-    ax.set_title(f"{panel_label}.  {title}", fontsize=11, fontweight="bold",
-                 loc="left", pad=8)
-    ax.set_xlabel("gene (SHAP feature)", fontsize=7, color="#52514e")
-    ax.set_ylabel("gene (SHAP feature)", fontsize=7, color="#52514e")
+    ax.set_title(f"{panel_label}.  {title}", fontsize=22, fontweight="bold",
+                 loc="left", pad=14)
+    ax.set_xlabel("genes (genomic order) →", fontsize=14, color="#52514e")
+    ax.set_ylabel("genes (genomic order) →", fontsize=14, color="#52514e")
     return im
 
 
-def draw_legend(ax, blocks, color_map):
+def draw_legend(ax, blocks, color_map, ncol=1):
     ax.axis("off")
     handles = [
         Line2D([0], [0], color=color_map[name][0], linestyle=color_map[name][1],
@@ -168,13 +169,15 @@ def draw_legend(ax, blocks, color_map):
         return
     ax.legend(
         handles, names,
-        loc="upper left",
+        loc="upper center",
         frameon=False,
-        fontsize=7.5,
-        title="Functional module\n(diagonal block outline)",
-        title_fontsize=7.5,
-        handlelength=2.2,
-        labelspacing=0.9,
+        fontsize=15,
+        title="Functional module (diagonal block outline)",
+        title_fontsize=16,
+        handlelength=2.6,
+        labelspacing=1.0,
+        columnspacing=2.2,
+        ncol=ncol,
         borderaxespad=0,
     )
 
@@ -202,19 +205,31 @@ def main():
     # forced to share row-height ratios.
     panel_pngs = []
     for spec, labels, matrix, blocks, color_map in panel_data:
-        n = len(labels)
-        pf = plt.figure(figsize=(0.24 * n + 3.2, 0.24 * n + 1.8))
-        pgs = pf.add_gridspec(1, 2, width_ratios=[4, 1.1], wspace=0.05,
-                               left=0.10, right=0.86, top=0.93, bottom=0.16)
+        n_groups = len(blocks)
+        ncol = 2 if n_groups > 4 else 1
+        legend_rows = -(-n_groups // ncol)
+        legend_h = 0.5 * legend_rows + 0.5
+        cbar_h = 1.3
+
+        pf = plt.figure(figsize=(10, 10 + legend_h + cbar_h))
+        pgs = pf.add_gridspec(
+            nrows=3, ncols=1, height_ratios=[10, legend_h, cbar_h], hspace=0.05,
+            left=0.06, right=0.97, top=0.95, bottom=0.02,
+        )
         pax = pf.add_subplot(pgs[0, 0])
         pax.set_aspect("equal")
-        im = draw_panel(pax, labels, matrix, blocks, spec["title"], spec["label"], color_map)
-        plax = pf.add_subplot(pgs[0, 1])
-        draw_legend(plax, blocks, color_map)
-        pcax = pf.add_axes([0.89, 0.25, 0.02, 0.5])
-        pcbar = pf.colorbar(im, cax=pcax, extend="both")
-        pcbar.set_label("Directional SHAP\ninteraction value", fontsize=8)
-        pcbar.ax.tick_params(labelsize=7)
+        im = draw_panel(pax, matrix, blocks, spec["title"], spec["label"], color_map)
+
+        lax = pf.add_subplot(pgs[1, 0])
+        draw_legend(lax, blocks, color_map, ncol=ncol)
+
+        bax = pf.add_subplot(pgs[2, 0])
+        bax.axis("off")
+        cax = bax.inset_axes([0.32, 0.55, 0.36, 0.28])
+        pcbar = pf.colorbar(im, cax=cax, orientation="horizontal", extend="both")
+        pcbar.set_label("Directional SHAP interaction value", fontsize=15)
+        pcbar.ax.tick_params(labelsize=13)
+
         png_path = OUT / f"shap_heatmap_{spec['key']}.png"
         pf.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.15)
         pf.savefig(OUT / f"shap_heatmap_{spec['key']}.pdf", bbox_inches="tight", pad_inches=0.15)
@@ -230,7 +245,7 @@ def stitch_panels(png_paths, out_path):
     images = [Image.open(p) for p in png_paths]
     target_w = max(im.width for im in images)
     gap = 40
-    title_h = 110
+    title_h = 220
 
     resized = []
     for im in images:
@@ -244,11 +259,11 @@ def stitch_panels(png_paths, out_path):
     draw = ImageDraw.Draw(canvas)
     try:
         font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 130
         )
     except OSError:
         font = ImageFont.load_default()
-    draw.text((20, 30), "Directional SHAP gene–gene interactions", fill="black", font=font)
+    draw.text((30, 40), "Directional SHAP gene–gene interactions", fill="black", font=font)
 
     y = title_h
     for im in resized:
