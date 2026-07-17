@@ -105,6 +105,12 @@ def group_blocks(groups: list) -> list:
 
 GROUP_RENAMES = {
     "aureusimine nonribosomal peptide biosynthesis": "aureusimine biosynthesis",
+    # Normalize capitalization to sentence case, matching the other
+    # (lowercase-first) group names — these three were capitalized in
+    # the source data but aren't proper nouns.
+    "Arsenical resistance": "arsenical resistance",
+    "Putative bacteriocin module": "putative bacteriocin module",
+    "Putative detoxification module": "putative detoxification module",
 }
 
 
@@ -197,9 +203,9 @@ N_HVR_EXCLUDED = 3  # the lowest-SHAP genes are the HVR region; drop entirely
 def load_cooccurrence():
     df = pd.read_excel(COOCCURRENCE_FILE, sheet_name="meca_all_gene_cooccurrence")
 
-    # The HVR region genes have by far the most negative mecA SHAP values
-    # (an artifact of that region's near-total linkage with mecA) and are
-    # excluded from the plot and the fit entirely, not just re-colored.
+    # The HVR region genes have by far the most negative SHAP effect on
+    # mecA (an artifact of that region's near-total linkage with mecA) and
+    # are excluded from the plot and the fit entirely, not just re-colored.
     hvr_idx = df.nsmallest(N_HVR_EXCLUDED, "Shap Value").index
     df = df.drop(index=hvr_idx).copy()
 
@@ -226,7 +232,7 @@ def draw_cooccurrence_panel(ax, df):
     hi = df[df["enough_genomes"]]
     lo = df[~df["enough_genomes"]]
 
-    # x = mecA SHAP value, y = log10(co-occurrence odds ratio).
+    # x = gene's SHAP effect on mecA, y = log10(co-occurrence odds ratio).
     ax.scatter(lo["Shap Value"], lo["log_odds"], s=10, color=COLOR_EXCLUDED,
                alpha=0.45, linewidths=0, zorder=2,
                label=f"< {MIN_GENOMES_PER_CELL} genomes in ≥1 combination "
@@ -250,9 +256,9 @@ def draw_cooccurrence_panel(ax, df):
     ax.axhline(0, color="#c3c2b7", linewidth=1, zorder=1)
     ax.axvline(0, color="#c3c2b7", linewidth=1, zorder=1)
 
-    ax.set_title("D.  mecA SHAP value vs. gene co-occurrence", fontsize=22,
+    ax.set_title("D.  gene SHAP effect on mecA vs. co-occurrence", fontsize=22,
                  fontweight="bold", loc="left", pad=14)
-    ax.set_xlabel("mecA SHAP value", fontsize=19, color="#52514e")
+    ax.set_xlabel("gene (input) SHAP effect on mecA (output)", fontsize=19, color="#52514e")
     ax.set_ylabel("log10(co-occurrence odds ratio)", fontsize=19, color="#52514e")
     ax.tick_params(labelsize=12)
     for spine in ("top", "right"):
