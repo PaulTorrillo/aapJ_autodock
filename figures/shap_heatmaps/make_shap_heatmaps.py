@@ -43,7 +43,7 @@ PANELS = [
     dict(
         key="N315_plasmid",
         file=DATA / "N315_plasmid.xlsx",
-        sheet="selected_gene_directional_shap_",
+        sheet="selected_gene_directional_shap",
         title="N315 plasmid",
         label="B",
     ),
@@ -51,7 +51,7 @@ PANELS = [
         key="JE2_mecA_ACME",
         file=DATA / "JE2_mecA_ACME.xlsx",
         sheet="selected_gene_directional_shap",
-        title="mecA + ACME cassette (JE2)",
+        title="mecA + ACME cassette (JE2) + flanking regions",
         label="C",
     ),
 ]
