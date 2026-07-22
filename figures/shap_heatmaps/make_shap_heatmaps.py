@@ -298,6 +298,110 @@ def make_cooccurrence_panel():
     return png_path
 
 
+CAP_ONLY_FILE = DATA / "capsule_cap_only.xlsx"
+
+
+def load_cap_only_panel():
+    """Rectangular variant: rows (input) are restricted to Cap-cluster genes
+    only, while columns (output) keep the full flanking neighborhood. Since
+    the row and column gene sets differ, module blocks are matched by gene
+    identity rather than assumed to sit at the same row/column position."""
+    df = pd.read_excel(CAP_ONLY_FILE, sheet_name="selected_gene_directional_shap")
+    row_idx_list = df["row_gene_idx"].tolist()
+    col_idx_list = [int(c.split(":")[0].replace("col_", "")) for c in df.columns[3:]]
+    col_pos = {gene: k for k, gene in enumerate(col_idx_list)}
+
+    # y = output (columns as given), x = input (rows as given).
+    matrix = df.iloc[:, 3:].to_numpy(dtype=float).T
+
+    groups = [GROUP_RENAMES.get(g, g) for g in df["Group"].tolist()]
+    blocks = []
+    for x_start, x_end, name in group_blocks(groups):
+        genes = row_idx_list[x_start:x_end + 1]
+        y_positions = [col_pos[g] for g in genes if g in col_pos]
+        y_start, y_end = min(y_positions), max(y_positions)
+        blocks.append((x_start, x_end, y_start, y_end, name))
+    return matrix, blocks
+
+
+def draw_rect_panel(ax, matrix, blocks, title):
+    n_out, n_in = matrix.shape
+    im = ax.imshow(
+        np.ma.masked_invalid(matrix),
+        cmap=CMAP,
+        vmin=-VLIM,
+        vmax=VLIM,
+        interpolation="nearest",
+    )
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#c3c2b7")
+        spine.set_linewidth(1)
+
+    ax.set_xlim(-0.5, n_in - 0.5)
+    ax.set_ylim(n_out - 0.5, -0.5)
+
+    for depth, (xs, xe, ys, ye, name) in enumerate(blocks):
+        w = xe - xs + 1
+        h = ye - ys + 1
+        rect = Rectangle(
+            (xs - 0.5, ys - 0.5), w, h,
+            fill=False, edgecolor=OUTLINE_COLOR,
+            linewidth=OUTLINE_WIDTH, zorder=6 + depth,
+        )
+        ax.add_patch(rect)
+        cx, cy = (xs + xe) / 2, (ys + ye) / 2
+        ax.text(
+            cx, cy, str(depth + 1),
+            ha="center", va="center", fontsize=13, fontweight="bold",
+            color="black", zorder=20,
+            path_effects=[pe.withStroke(linewidth=2.5, foreground="white")],
+        )
+
+    ax.set_title(title, fontsize=22, fontweight="bold", loc="left", pad=14)
+    ax.set_xlabel("gene (input) — Cap genes only", fontsize=19, color="#52514e")
+    ax.set_ylabel("gene (output) — flanking neighborhood", fontsize=19, color="#52514e")
+    return im
+
+
+def make_cap_only_panel():
+    matrix, blocks = load_cap_only_panel()
+    n_out, n_in = matrix.shape
+
+    n_groups = len(blocks)
+    ncol = 2 if n_groups > 4 else 1
+    legend_rows = -(-n_groups // ncol)
+    legend_h = 0.5 * legend_rows + 0.5
+    heat_h = 10 * (n_out / n_in)  # keep cells square: width fixed at 10, like the other panels
+
+    pf = plt.figure(figsize=(10.8, heat_h + legend_h))
+    pgs = pf.add_gridspec(
+        nrows=2, ncols=2, width_ratios=[10, 0.35], height_ratios=[heat_h, legend_h],
+        hspace=0.14, wspace=0.12,
+        left=0.06, right=0.93, top=0.95, bottom=0.02,
+    )
+    pax = pf.add_subplot(pgs[0, 0])
+    pax.set_aspect("equal")
+    im = draw_rect_panel(pax, matrix, blocks, "capsule region — Cap genes only")
+
+    cax = pf.add_subplot(pgs[0, 1])
+    pcbar = pf.colorbar(im, cax=cax, orientation="vertical", extend="both")
+    pcbar.set_label("Directional SHAP interaction value", fontsize=15)
+    pcbar.ax.tick_params(labelsize=13)
+
+    lax = pf.add_subplot(pgs[1, :])
+    draw_legend(lax, [(xs, xe, name) for xs, xe, ys, ye, name in blocks], ncol=ncol)
+
+    png_path = OUT / "shap_heatmap_capsule_cap_only.png"
+    pf.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.15)
+    pf.savefig(OUT / "shap_heatmap_capsule_cap_only.pdf", bbox_inches="tight", pad_inches=0.15)
+    plt.close(pf)
+    return png_path
+
+
 def main():
     panel_data = []
     for spec in PANELS:
@@ -343,6 +447,10 @@ def main():
     panel_pngs.append(make_cooccurrence_panel())
 
     stitch_panels(panel_pngs, OUT / "shap_interaction_heatmaps.png")
+
+    # Standalone figure, not part of the combined A-D grid.
+    make_cap_only_panel()
+
     print("Saved figures to", OUT)
 
 
